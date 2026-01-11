@@ -720,14 +720,29 @@ var mcpConfigSchema = {
   }
 };
 var httpServer = http.createServer(async (req, res) => {
-  const pathname = req.url?.split("?")[0] || "/";
+  const url = new URL(req.url || "/", `http://${req.headers.host}`);
+  const pathname = url.pathname;
   console.log(`${req.method} ${pathname}`);
   res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, *");
+  res.setHeader("Access-Control-Expose-Headers", "mcp-session-id, mcp-protocol-version");
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
+    return;
+  }
+  if (pathname === "/mcp" || pathname.endsWith("/mcp")) {
+    if (req.method === "POST") {
+      console.log("Handling MCP POST request on /mcp");
+      await transport.handleRequest(req, res);
+      return;
+    }
+  }
+  if (req.method === "POST" && pathname === "/") {
+    console.log("Handling MCP POST request on /");
+    await transport.handleRequest(req, res);
     return;
   }
   if (req.method === "GET" && pathname.includes(".well-known/mcp.json")) {
@@ -747,16 +762,11 @@ var httpServer = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ status: "ok" }));
     return;
   }
-  if (req.method === "POST") {
-    console.log("Handling MCP POST request");
-    await transport.handleRequest(req, res);
-    return;
-  }
   console.log("404 - Not found:", pathname);
   res.writeHead(404);
   res.end("Not found");
 });
-var port = parseInt(process.env.PORT || "8000");
+var port = parseInt(process.env.PORT || "8081");
 httpServer.listen(port, () => {
   console.log(`MCP Server listening on port ${port}`);
 });
