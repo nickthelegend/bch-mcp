@@ -3,10 +3,6 @@ import createServer, { configSchema } from "./index.js";
 import http from "http";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const config = configSchema.parse({
     debug: process.env.DEBUG === "true",
@@ -20,18 +16,20 @@ const transport = new StreamableHTTPServerTransport({
 
 await mcpServer.connect(transport);
 
-// Load MCP Server Card from file
-const mcpCardPath = path.join(__dirname, "../public/.well-known/mcp.json");
+// Load MCP Server Card from file - use process.cwd() for Docker compatibility
+const mcpCardPath = path.join(process.cwd(), "public/.well-known/mcp.json");
 let mcpCard: object;
 try {
     mcpCard = JSON.parse(fs.readFileSync(mcpCardPath, "utf-8"));
     console.log("Loaded MCP Server Card from", mcpCardPath);
 } catch (e) {
     console.error("Failed to load MCP Server Card from", mcpCardPath, e);
+    // Fallback - serve directly
     mcpCard = {
-        name: "BCH MCP Server",
-        description: "Bitcoin Cash MCP Server",
-        version: "1.0.0"
+        name: "bch-mcp",
+        description: "Bitcoin Cash privacy & tooling MCP server",
+        version: "1.0.0",
+        endpoint: "/mcp"
     };
 }
 
@@ -96,8 +94,8 @@ const httpServer = http.createServer(async (req, res) => {
         return;
     }
 
-    // MCP protocol endpoint
-    if (req.method === "POST") {
+    // MCP protocol endpoint - handle both /mcp and root POST
+    if (req.method === "POST" && (pathname === "/mcp" || pathname === "/" || pathname.endsWith("/mcp"))) {
         await transport.handleRequest(req, res);
         return;
     }

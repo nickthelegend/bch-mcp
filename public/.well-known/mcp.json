@@ -1,7 +1,8 @@
 {
-    "name": "BCH MCP Server",
+    "name": "bch-mcp",
     "description": "A comprehensive Bitcoin Cash (BCH) MCP server powered by mainnet-js. Provides wallet management, balance checking, sending BCH, CashTokens (genesis, minting, burning, sending), escrow contracts, QR codes, and transaction utilities.",
     "version": "1.0.0",
+    "endpoint": "/mcp",
     "author": "nickthelegend",
     "repository": "https://github.com/nickthelegend/bch-mcp",
     "capabilities": {

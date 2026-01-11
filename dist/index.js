@@ -687,9 +687,6 @@ function createServer({
 import http from "http";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
-var __filename = fileURLToPath(import.meta.url);
-var __dirname = path.dirname(__filename);
 var config = configSchema.parse({
   debug: process.env.DEBUG === "true"
 });
@@ -698,7 +695,7 @@ var transport = new StreamableHTTPServerTransport({
   sessionIdGenerator: () => crypto.randomUUID()
 });
 await mcpServer.connect(transport);
-var mcpCardPath = path.join(__dirname, "../public/.well-known/mcp.json");
+var mcpCardPath = path.join(process.cwd(), "public/.well-known/mcp.json");
 var mcpCard;
 try {
   mcpCard = JSON.parse(fs.readFileSync(mcpCardPath, "utf-8"));
@@ -706,9 +703,10 @@ try {
 } catch (e) {
   console.error("Failed to load MCP Server Card from", mcpCardPath, e);
   mcpCard = {
-    name: "BCH MCP Server",
-    description: "Bitcoin Cash MCP Server",
-    version: "1.0.0"
+    name: "bch-mcp",
+    description: "Bitcoin Cash privacy & tooling MCP server",
+    version: "1.0.0",
+    endpoint: "/mcp"
   };
 }
 var mcpConfigSchema = {
@@ -751,7 +749,7 @@ var httpServer = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ status: "ok" }));
     return;
   }
-  if (req.method === "POST") {
+  if (req.method === "POST" && (pathname === "/mcp" || pathname === "/" || pathname.endsWith("/mcp"))) {
     await transport.handleRequest(req, res);
     return;
   }
