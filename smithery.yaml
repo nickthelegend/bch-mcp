@@ -1,1 +1,16 @@
-runtime: typescript
+runtime: "container"
+build:
+  dockerfile: "Dockerfile"
+  dockerBuildPath: "."
+startCommand:
+  type: "http"
+  configSchema:
+    type: "object"
+    properties:
+      debug:
+        type: "boolean"
+        description: "Enable debug logging"
+        default: false
+    required: []
+  exampleConfig:
+    debug: false
