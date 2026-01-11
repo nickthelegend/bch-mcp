@@ -685,6 +685,10 @@ function createServer({
 
 // src/server.ts
 import http from "http";
+import path from "path";
+import { fileURLToPath } from "url";
+var __filename = fileURLToPath(import.meta.url);
+var __dirname = path.dirname(__filename);
 var config = configSchema.parse({
   debug: process.env.DEBUG === "true"
 });
@@ -693,12 +697,51 @@ var transport = new StreamableHTTPServerTransport({
   sessionIdGenerator: () => crypto.randomUUID()
 });
 await mcpServer.connect(transport);
+var mcpCard = {
+  name: "BCH MCP Server",
+  description: "A comprehensive Bitcoin Cash (BCH) MCP server powered by mainnet-js. Provides wallet management, balance checking, sending BCH, CashTokens (genesis, minting, burning, sending), escrow contracts, QR codes, and transaction utilities.",
+  version: "1.0.0",
+  author: "nickthelegend",
+  repository: "https://github.com/nickthelegend/bch-mcp",
+  capabilities: {
+    tools: true,
+    resources: false,
+    prompts: false
+  }
+};
+var mcpConfigSchema = {
+  title: "MCP Session Configuration",
+  description: "Schema for the /mcp endpoint configuration",
+  "x-query-style": "dot+bracket",
+  type: "object",
+  properties: {
+    debug: {
+      type: "boolean",
+      default: false,
+      description: "Enable debug logging"
+    }
+  }
+};
 var httpServer = http.createServer(async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
   if (req.method === "POST") {
     await transport.handleRequest(req, res);
   } else if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "ok" }));
+  } else if (req.method === "GET" && req.url === "/.well-known/mcp.json") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(mcpCard, null, 2));
+  } else if (req.method === "GET" && req.url === "/.well-known/mcp-config") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(mcpConfigSchema, null, 2));
   } else {
     res.writeHead(404);
     res.end("Not found");
