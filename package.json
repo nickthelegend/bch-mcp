@@ -7,10 +7,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "smithery dev",
-		"build": "esbuild src/server.ts --bundle --platform=node --format=esm --outfile=dist/index.js --packages=external",
-		"build:lib": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/lib.js --packages=external",
-		"build:smithery": "node smithery.build.mjs",
-		"start": "node dist/index.js"
+		"build": "smithery build"
 	},
 	"keywords": [],
 	"author": "",

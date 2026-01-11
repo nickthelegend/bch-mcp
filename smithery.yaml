@@ -1,13 +1,1 @@
-runtime: container
-build:
-  dockerfile: Dockerfile
-  dockerBuildPath: .
-startCommand:
-  type: http
-  configSchema:
-    type: object
-    properties:
-      debug:
-        type: boolean
-        default: false
-        description: "Enable debug logging"
+runtime: typescript
