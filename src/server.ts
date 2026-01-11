@@ -20,19 +20,20 @@ const transport = new StreamableHTTPServerTransport({
 
 await mcpServer.connect(transport);
 
-// MCP Server Card
-const mcpCard = {
-    name: "BCH MCP Server",
-    description: "A comprehensive Bitcoin Cash (BCH) MCP server powered by mainnet-js. Provides wallet management, balance checking, sending BCH, CashTokens (genesis, minting, burning, sending), escrow contracts, QR codes, and transaction utilities.",
-    version: "1.0.0",
-    author: "nickthelegend",
-    repository: "https://github.com/nickthelegend/bch-mcp",
-    capabilities: {
-        tools: true,
-        resources: false,
-        prompts: false
-    }
-};
+// Load MCP Server Card from file
+const mcpCardPath = path.join(__dirname, "../public/.well-known/mcp.json");
+let mcpCard: object;
+try {
+    mcpCard = JSON.parse(fs.readFileSync(mcpCardPath, "utf-8"));
+    console.log("Loaded MCP Server Card from", mcpCardPath);
+} catch (e) {
+    console.error("Failed to load MCP Server Card from", mcpCardPath, e);
+    mcpCard = {
+        name: "BCH MCP Server",
+        description: "Bitcoin Cash MCP Server",
+        version: "1.0.0"
+    };
+}
 
 // MCP Config schema for .well-known/mcp-config
 const mcpConfigSchema = {
@@ -50,6 +51,11 @@ const mcpConfigSchema = {
 };
 
 const httpServer = http.createServer(async (req, res) => {
+    const url = new URL(req.url || "/", `http://${req.headers.host}`);
+    const pathname = url.pathname;
+
+    console.log(`${req.method} ${pathname}`);
+
     // CORS headers
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -61,21 +67,43 @@ const httpServer = http.createServer(async (req, res) => {
         return;
     }
 
-    if (req.method === "POST") {
-        await transport.handleRequest(req, res);
-    } else if (req.method === "GET" && req.url === "/health") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok" }));
-    } else if (req.method === "GET" && req.url === "/.well-known/mcp.json") {
+    // Handle MCP server card - match multiple patterns
+    if (req.method === "GET" && (
+        pathname === "/.well-known/mcp.json" ||
+        pathname === "/.well-known/mcp" ||
+        pathname.endsWith("/.well-known/mcp.json") ||
+        pathname.endsWith("/.well-known/mcp")
+    )) {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(mcpCard, null, 2));
-    } else if (req.method === "GET" && req.url === "/.well-known/mcp-config") {
+        return;
+    }
+
+    // Handle MCP config schema
+    if (req.method === "GET" && (
+        pathname === "/.well-known/mcp-config" ||
+        pathname.endsWith("/.well-known/mcp-config")
+    )) {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(mcpConfigSchema, null, 2));
-    } else {
-        res.writeHead(404);
-        res.end("Not found");
+        return;
     }
+
+    // Health check
+    if (req.method === "GET" && (pathname === "/health" || pathname.endsWith("/health"))) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "ok" }));
+        return;
+    }
+
+    // MCP protocol endpoint
+    if (req.method === "POST") {
+        await transport.handleRequest(req, res);
+        return;
+    }
+
+    res.writeHead(404);
+    res.end("Not found");
 });
 
 const port = parseInt(process.env.PORT || "8000");
