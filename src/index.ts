@@ -27,6 +27,286 @@ export const configSchema = z.object({
 	debug: z.boolean().default(false).describe("Enable debug logging"),
 })
 
+// Documentation content for resources
+const DOCS = {
+	overview: `# Bitcoin Cash (BCH) MCP Server
+
+A comprehensive MCP server for Bitcoin Cash operations powered by mainnet-js.
+
+## Features
+- **Wallet Management**: Create, restore, and manage BCH wallets
+- **Transactions**: Send BCH, check balances, view history
+- **CashTokens**: Full fungible and NFT token support
+- **Escrow**: Non-custodial escrow smart contracts
+- **Utilities**: QR codes, price conversion, address validation
+
+## Quick Start
+1. Create a wallet: \`wallet_create\`
+2. Get testnet coins: \`get_testnet_satoshis\`
+3. Check balance: \`get_balance\`
+4. Send BCH: \`send\`
+
+## Networks
+- **mainnet**: Production Bitcoin Cash network
+- **testnet**: Test network with free test coins
+- **regtest**: Local development network`,
+
+	wallets: `# Wallet Management
+
+## Creating Wallets
+
+### wallet_create
+Create a new random wallet.
+\`\`\`json
+{ "network": "testnet", "type": "seed" }
+\`\`\`
+
+### wallet_from_seed
+Restore from mnemonic seed phrase.
+\`\`\`json
+{ "seedPhrase": "word1 word2 ... word12", "derivationPath": "m/44'/0'/0'/0/0", "network": "testnet" }
+\`\`\`
+
+### wallet_from_wif
+Restore from WIF private key.
+\`\`\`json
+{ "wif": "cNfsPtqN2bMRS7vH5qd8tR8GMvgXyL5BjnGAKgZ8DYEiCrCCQcP6", "network": "testnet" }
+\`\`\`
+
+### wallet_watch_only
+Create watch-only wallet (view balance, can't spend).
+\`\`\`json
+{ "cashaddr": "bchtest:qq...", "network": "testnet" }
+\`\`\`
+
+## Wallet ID Format
+Wallets are identified by a walletId string:
+- \`wif:testnet:cNfsP...\` - WIF format
+- \`seed:testnet:word1 word2...:m/44'/0'/0'/0/0\` - Seed format`,
+
+	transactions: `# Transactions
+
+## Sending BCH
+
+### send
+Send BCH to one or more recipients.
+\`\`\`json
+{
+  "walletId": "wif:testnet:...",
+  "to": [
+    { "cashaddr": "bchtest:qq...", "value": 0.001, "unit": "bch" }
+  ]
+}
+\`\`\`
+
+### send_max
+Send all available funds to an address.
+\`\`\`json
+{ "walletId": "wif:testnet:...", "address": "bchtest:qq..." }
+\`\`\`
+
+### op_return_send
+Send a transaction with OP_RETURN data.
+\`\`\`json
+{ "walletId": "wif:testnet:...", "data": ["MEMO", "Hello World"] }
+\`\`\`
+
+## Transaction Building
+
+### encode_transaction
+Build a transaction without broadcasting (returns hex).
+\`\`\`json
+{
+  "walletId": "wif:testnet:...",
+  "to": [{ "cashaddr": "bchtest:qq...", "value": 1000, "unit": "sat" }]
+}
+\`\`\`
+
+### submit_transaction
+Broadcast a signed transaction hex.
+\`\`\`json
+{ "walletId": "wif:testnet:...", "transactionHex": "0200000001..." }
+\`\`\`
+
+## Fees
+- BCH uses approximately 1 sat/byte for fees
+- Use \`get_max_amount_to_send\` to calculate sendable amount minus fees`,
+
+	cashtokens: `# CashTokens
+
+CashTokens are Bitcoin Cash's native token system supporting both fungible tokens (FT) and non-fungible tokens (NFT).
+
+## Token Genesis
+
+### token_genesis
+Create a new token category.
+\`\`\`json
+{
+  "walletId": "wif:testnet:...",
+  "amount": "1000000",
+  "commitment": "abcd",
+  "capability": "minting",
+  "cashaddr": "bchtest:qq..."
+}
+\`\`\`
+
+Capabilities:
+- \`none\`: Immutable NFT
+- \`mutable\`: Can change commitment
+- \`minting\`: Can create new NFTs
+
+## Token Operations
+
+### token_send
+Send tokens to an address.
+\`\`\`json
+{
+  "walletId": "wif:testnet:...",
+  "tokenId": "abc123...",
+  "amount": "100",
+  "cashaddr": "bchtest:qq..."
+}
+\`\`\`
+
+### token_mint
+Mint new NFT tokens (requires minting capability).
+\`\`\`json
+{
+  "walletId": "wif:testnet:...",
+  "tokenId": "abc123...",
+  "requests": [
+    { "cashaddr": "bchtest:qq...", "commitment": "01", "capability": "none" }
+  ]
+}
+\`\`\`
+
+### token_burn
+Burn tokens permanently.
+\`\`\`json
+{
+  "walletId": "wif:testnet:...",
+  "tokenId": "abc123...",
+  "amount": "10"
+}
+\`\`\`
+
+## Token Balances
+- \`get_token_balance\`: Get balance of specific token
+- \`get_all_token_balances\`: Get all FT balances
+- \`get_nft_token_balance\`: Get NFT count
+- \`get_all_nft_token_balances\`: Get all NFT balances
+- \`get_token_utxos\`: Get UTXOs containing tokens`,
+
+	escrow: `# Escrow Contracts
+
+Non-custodial escrow for secure peer-to-peer transactions.
+
+## How Escrow Works
+1. **Create**: Arbiter, buyer, and seller addresses are locked into contract
+2. **Fund**: Buyer sends funds to contract address
+3. **Release**: Buyer or arbiter releases funds to seller (spend)
+4. **Refund**: Seller or arbiter can refund to buyer
+
+## Usage
+
+### escrow_create
+Create a new escrow contract.
+\`\`\`json
+{
+  "arbiterAddr": "bchtest:qq...",
+  "buyerAddr": "bchtest:qq...",
+  "sellerAddr": "bchtest:qq...",
+  "amount": "10000",
+  "network": "testnet"
+}
+\`\`\`
+Returns a contract ID and deposit address.
+
+### escrow_get_balance
+Check escrow contract balance.
+\`\`\`json
+{ "contractId": "escrow:testnet:..." }
+\`\`\`
+
+### escrow_spend
+Release funds to seller (buyer or arbiter can call).
+\`\`\`json
+{ "contractId": "escrow:testnet:...", "wif": "cNfsP..." }
+\`\`\`
+
+### escrow_refund
+Refund funds to buyer (seller or arbiter can call).
+\`\`\`json
+{ "contractId": "escrow:testnet:...", "wif": "cNfsP..." }
+\`\`\``,
+
+	utilities: `# Utilities
+
+## Price & Conversion
+
+### get_bch_price
+Get current BCH price in USD.
+\`\`\`json
+{}
+\`\`\`
+
+### convert_currency
+Convert between BCH, satoshis, and USD.
+\`\`\`json
+{ "amount": 100, "from": "usd", "to": "sat" }
+\`\`\`
+
+## QR Codes
+
+### qr_address
+Generate QR code for an address.
+\`\`\`json
+{ "address": "bchtest:qq...", "size": 256 }
+\`\`\`
+
+## Blockchain Info
+
+### get_block_height
+Get current blockchain height.
+\`\`\`json
+{ "network": "testnet" }
+\`\`\`
+
+### decode_transaction
+Decode transaction by hash or hex.
+\`\`\`json
+{ "transaction": "abc123...", "loadInputValues": true }
+\`\`\`
+
+## Address Tools
+
+### validate_address
+Validate a BCH address.
+\`\`\`json
+{ "address": "bchtest:qq..." }
+\`\`\`
+
+### get_deposit_address
+Get deposit addresses for a wallet.
+\`\`\`json
+{ "walletId": "wif:testnet:..." }
+\`\`\`
+
+## Signing
+
+### sign_message
+Sign a message with wallet's private key.
+\`\`\`json
+{ "walletId": "wif:testnet:...", "message": "Hello World" }
+\`\`\`
+
+### verify_message
+Verify a message signature.
+\`\`\`json
+{ "walletId": "wif:testnet:...", "message": "Hello World", "signature": "H/9jM..." }
+\`\`\``
+};
+
 export default function createServer({
 	config,
 }: {
@@ -36,6 +316,62 @@ export default function createServer({
 		name: "Mainnet-JS BCH MCP Server",
 		version: "1.0.0",
 	})
+
+	// --- Register Documentation Resources ---
+
+	server.resource(
+		"bch-overview",
+		"docs://overview",
+		{ description: "Overview of the BCH MCP Server and its capabilities", mimeType: "text/markdown" },
+		async () => ({
+			contents: [{ uri: "docs://overview", text: DOCS.overview, mimeType: "text/markdown" }]
+		})
+	)
+
+	server.resource(
+		"wallet-guide",
+		"docs://wallets",
+		{ description: "Guide for creating and managing BCH wallets", mimeType: "text/markdown" },
+		async () => ({
+			contents: [{ uri: "docs://wallets", text: DOCS.wallets, mimeType: "text/markdown" }]
+		})
+	)
+
+	server.resource(
+		"transaction-guide",
+		"docs://transactions",
+		{ description: "Guide for sending BCH and building transactions", mimeType: "text/markdown" },
+		async () => ({
+			contents: [{ uri: "docs://transactions", text: DOCS.transactions, mimeType: "text/markdown" }]
+		})
+	)
+
+	server.resource(
+		"cashtokens-guide",
+		"docs://cashtokens",
+		{ description: "Guide for creating and managing CashTokens (fungible and NFT)", mimeType: "text/markdown" },
+		async () => ({
+			contents: [{ uri: "docs://cashtokens", text: DOCS.cashtokens, mimeType: "text/markdown" }]
+		})
+	)
+
+	server.resource(
+		"escrow-guide",
+		"docs://escrow",
+		{ description: "Guide for creating and using escrow smart contracts", mimeType: "text/markdown" },
+		async () => ({
+			contents: [{ uri: "docs://escrow", text: DOCS.escrow, mimeType: "text/markdown" }]
+		})
+	)
+
+	server.resource(
+		"utilities-guide",
+		"docs://utilities",
+		{ description: "Guide for utility tools like QR codes, price conversion, and more", mimeType: "text/markdown" },
+		async () => ({
+			contents: [{ uri: "docs://utilities", text: DOCS.utilities, mimeType: "text/markdown" }]
+		})
+	)
 
 	// --- Wallet Management ---
 
