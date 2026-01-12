@@ -725,8 +725,8 @@ var httpServer = http.createServer(async (req, res) => {
   console.log(`${req.method} ${pathname}`);
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, *");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, mcp-session-id, mcp-protocol-version");
   res.setHeader("Access-Control-Expose-Headers", "mcp-session-id, mcp-protocol-version");
   if (req.method === "OPTIONS") {
     res.writeHead(204);
@@ -759,14 +759,45 @@ var httpServer = http.createServer(async (req, res) => {
   }
   if (req.method === "GET" && (pathname === "/health" || pathname.endsWith("/health"))) {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok" }));
+    res.end(JSON.stringify({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() }));
+    return;
+  }
+  if (req.method === "GET" && pathname === "/") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      name: "BCH MCP Server",
+      version: "1.0.0",
+      endpoints: {
+        mcp: "/mcp",
+        health: "/health",
+        card: "/.well-known/mcp.json",
+        config: "/.well-known/mcp-config"
+      },
+      documentation: "https://github.com/nickthelegend/bch-mcp"
+    }, null, 2));
     return;
   }
   console.log("404 - Not found:", pathname);
-  res.writeHead(404);
-  res.end("Not found");
+  res.writeHead(404, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: "Not found", path: pathname }));
+});
+process.on("SIGTERM", () => {
+  console.log("SIGTERM signal received: closing HTTP server");
+  httpServer.close(() => {
+    console.log("HTTP server closed");
+    process.exit(0);
+  });
+});
+process.on("SIGINT", () => {
+  console.log("SIGINT signal received: closing HTTP server");
+  httpServer.close(() => {
+    console.log("HTTP server closed");
+    process.exit(0);
+  });
 });
 var port = parseInt(process.env.PORT || "8081");
-httpServer.listen(port, () => {
-  console.log(`MCP Server listening on port ${port}`);
+httpServer.listen(port, "0.0.0.0", () => {
+  console.log(`BCH MCP Server listening on http://0.0.0.0:${port}`);
+  console.log(`MCP endpoint: http://0.0.0.0:${port}/mcp`);
+  console.log(`Health check: http://0.0.0.0:${port}/health`);
 });

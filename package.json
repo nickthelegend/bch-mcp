@@ -1,28 +1,32 @@
 {
-	"name": "hello-server",
+	"name": "bch-mcp-server",
 	"version": "1.0.0",
-	"description": "",
-	"main": "index.js",
+	"description": "Bitcoin Cash MCP Server powered by mainnet-js",
+	"main": "dist/index.js",
 	"module": "./src/index.ts",
 	"type": "module",
 	"scripts": {
-		"dev": "smithery dev",
 		"build": "esbuild src/server.ts --bundle --platform=node --format=esm --outfile=dist/index.js --packages=external",
-		"start": "node dist/index.js"
+		"start": "node dist/index.js",
+		"dev": "node --loader ts-node/esm src/server.ts"
 	},
-	"keywords": [],
-	"author": "",
-	"license": "ISC",
+	"keywords": [
+		"bitcoin-cash",
+		"bch",
+		"mcp",
+		"model-context-protocol"
+	],
+	"author": "nickthelegend",
+	"license": "MIT",
 	"dependencies": {
 		"@mainnet-cash/contract": "^2.7.31",
 		"@modelcontextprotocol/sdk": "^1.25.1",
-		"@smithery/sdk": "^3.0.1",
 		"mainnet-js": "^2.7.31",
 		"qrcode-svg": "^1.1.0",
 		"zod": "^4"
 	},
 	"devDependencies": {
-		"@smithery/cli": "^2.2.1",
-		"esbuild": "^0.27.2"
+		"esbuild": "^0.27.2",
+		"typescript": "^5.3.3"
 	}
 }

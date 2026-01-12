@@ -1,0 +1,51 @@
+# Dependencies
+node_modules
+
+# Build output (will be built in container)
+dist
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment files (should be set in container)
+.env
+.env.local
+.env*.local
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+*.md
+docs/
+docs-mainnet/
+
+# Scripts (not needed in container)
+run.sh
+
+# Certbot (mounted as volume)
+certbot/
+
+# Public files (not needed for this app)
+public/
+
+# Smithery files (removed)
+.smithery/
+smithery.yaml
