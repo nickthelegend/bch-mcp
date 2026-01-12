@@ -738,5 +738,469 @@ export default function createServer({
 		}
 	)
 
+	// --- Additional Wallet Tools ---
+
+	server.registerTool(
+		"wallet_from_seed",
+		{
+			title: "Wallet from Seed Phrase",
+			description: "Restore a wallet from a mnemonic seed phrase",
+			inputSchema: z.object({
+				seedPhrase: z.string().describe("12 or 24 word mnemonic seed phrase"),
+				derivationPath: z.string().default("m/44'/0'/0'/0/0").describe("BIP44 derivation path"),
+				network: z.enum(["mainnet", "testnet"]).default("testnet").describe("Network"),
+			}),
+		},
+		async ({ seedPhrase, derivationPath, network }) => {
+			let wallet;
+			if (network === "mainnet") {
+				wallet = await Wallet.fromSeed(seedPhrase, derivationPath);
+			} else {
+				wallet = await TestNetWallet.fromSeed(seedPhrase, derivationPath);
+			}
+			return {
+				content: [{
+					type: "text",
+					text: JSON.stringify({
+						cashaddr: wallet.cashaddr,
+						tokenaddr: wallet.tokenaddr,
+						walletId: wallet.toString(),
+						derivationPath: wallet.derivationPath,
+						network: network
+					}, null, 2)
+				}],
+			}
+		}
+	)
+
+	server.registerTool(
+		"wallet_from_wif",
+		{
+			title: "Wallet from WIF",
+			description: "Restore a wallet from a WIF (Wallet Import Format) private key",
+			inputSchema: z.object({
+				wif: z.string().describe("WIF private key"),
+				network: z.enum(["mainnet", "testnet"]).default("testnet").describe("Network"),
+			}),
+		},
+		async ({ wif, network }) => {
+			let wallet;
+			if (network === "mainnet") {
+				wallet = await Wallet.fromWIF(wif);
+			} else {
+				wallet = await TestNetWallet.fromWIF(wif);
+			}
+			return {
+				content: [{
+					type: "text",
+					text: JSON.stringify({
+						cashaddr: wallet.cashaddr,
+						tokenaddr: wallet.tokenaddr,
+						walletId: wallet.toString(),
+						network: network
+					}, null, 2)
+				}],
+			}
+		}
+	)
+
+	server.registerTool(
+		"wallet_watch_only",
+		{
+			title: "Create Watch-Only Wallet",
+			description: "Create a watch-only wallet from a cash address (can view but not spend)",
+			inputSchema: z.object({
+				cashaddr: z.string().describe("Cash address to watch"),
+				network: z.enum(["mainnet", "testnet"]).default("testnet").describe("Network"),
+			}),
+		},
+		async ({ cashaddr, network }) => {
+			let wallet;
+			if (network === "mainnet") {
+				wallet = await Wallet.watchOnly(cashaddr);
+			} else {
+				wallet = await TestNetWallet.watchOnly(cashaddr);
+			}
+			return {
+				content: [{
+					type: "text",
+					text: JSON.stringify({
+						cashaddr: wallet.cashaddr,
+						tokenaddr: wallet.tokenaddr,
+						walletId: wallet.toString(),
+						network: network,
+						isWatchOnly: true
+					}, null, 2)
+				}],
+			}
+		}
+	)
+
+	// --- UTXO Management ---
+
+	server.registerTool(
+		"get_utxos",
+		{
+			title: "Get UTXOs",
+			description: "Get all unspent transaction outputs for a wallet",
+			inputSchema: z.object({
+				walletId: z.string().describe("The walletId"),
+			}),
+		},
+		async ({ walletId }) => {
+			const wallet = await walletFromId(walletId);
+			const utxos = await wallet.getUtxos();
+			return {
+				content: [{ type: "text", text: JSON.stringify(serialize(utxos), null, 2) }],
+			}
+		}
+	)
+
+	server.registerTool(
+		"get_max_amount_to_send",
+		{
+			title: "Get Max Amount to Send",
+			description: "Get the maximum amount that can be sent (balance minus fees)",
+			inputSchema: z.object({
+				walletId: z.string().describe("The walletId"),
+				outputCount: z.number().default(1).describe("Number of outputs in the transaction"),
+			}),
+		},
+		async ({ walletId, outputCount }) => {
+			const wallet = await walletFromId(walletId);
+			const maxAmount = await wallet.getMaxAmountToSend({ outputCount });
+			return {
+				content: [{ type: "text", text: JSON.stringify(serialize(maxAmount), null, 2) }],
+			}
+		}
+	)
+
+	// --- History & Blockchain Info ---
+
+	server.registerTool(
+		"get_raw_history",
+		{
+			title: "Get Raw Transaction History",
+			description: "Get raw transaction history for a wallet (chronological order)",
+			inputSchema: z.object({
+				walletId: z.string().describe("The walletId"),
+			}),
+		},
+		async ({ walletId }) => {
+			const wallet = await walletFromId(walletId);
+			const history = await wallet.getRawHistory();
+			return {
+				content: [{ type: "text", text: JSON.stringify(serialize(history), null, 2) }],
+			}
+		}
+	)
+
+	server.registerTool(
+		"get_block_height",
+		{
+			title: "Get Block Height",
+			description: "Get the current blockchain block height",
+			inputSchema: z.object({
+				network: z.enum(["mainnet", "testnet"]).default("testnet").describe("Network"),
+			}),
+		},
+		async ({ network }) => {
+			let wallet;
+			if (network === "mainnet") {
+				wallet = await Wallet.newRandom();
+			} else {
+				wallet = await TestNetWallet.newRandom();
+			}
+			const height = await wallet.provider!.getBlockHeight();
+			return {
+				content: [{ type: "text", text: JSON.stringify({ blockHeight: height, network }, null, 2) }],
+			}
+		}
+	)
+
+	// --- Price & Conversion ---
+
+	server.registerTool(
+		"get_bch_price",
+		{
+			title: "Get BCH Price",
+			description: "Get the current BCH price in USD",
+			inputSchema: z.object({}),
+		},
+		async () => {
+			const priceInSat = await convert(1, "usd", "sat");
+			const pricePerBch = await convert(1, "bch", "usd");
+			return {
+				content: [{
+					type: "text",
+					text: JSON.stringify({
+						bchPriceUsd: pricePerBch,
+						satoshisPerUsd: priceInSat,
+						timestamp: new Date().toISOString()
+					}, null, 2)
+				}],
+			}
+		}
+	)
+
+	// --- Advanced Transaction Tools ---
+
+	server.registerTool(
+		"encode_transaction",
+		{
+			title: "Encode Transaction",
+			description: "Build a transaction without broadcasting (returns hex)",
+			inputSchema: z.object({
+				walletId: z.string().describe("The source walletId"),
+				to: z.array(z.object({
+					cashaddr: z.string().describe("Recipient address"),
+					value: z.number().describe("Amount to send"),
+					unit: z.enum(["bch", "sat", "usd"]).default("bch").describe("Unit for amount"),
+				})).describe("List of recipients"),
+			}),
+		},
+		async ({ walletId, to }) => {
+			const wallet = await walletFromId(walletId);
+			const requests = to.map(r => ({
+				cashaddr: r.cashaddr,
+				value: r.value,
+				unit: r.unit as UnitEnum
+			}));
+			const encoded = await wallet.encodeTransaction(requests);
+			return {
+				content: [{ type: "text", text: JSON.stringify({ hex: encoded }, null, 2) }],
+			}
+		}
+	)
+
+	server.registerTool(
+		"submit_transaction",
+		{
+			title: "Submit Transaction",
+			description: "Broadcast a signed transaction hex to the network",
+			inputSchema: z.object({
+				walletId: z.string().describe("Any walletId (used for network connection)"),
+				transactionHex: z.string().describe("Signed transaction in hex format"),
+			}),
+		},
+		async ({ walletId, transactionHex }) => {
+			const wallet = await walletFromId(walletId);
+			const txId = await wallet.submitTransaction(transactionHex as any);
+			return {
+				content: [{ type: "text", text: JSON.stringify({ txId }, null, 2) }],
+			}
+		}
+	)
+
+	// --- Wallet Keys & Info ---
+
+	server.registerTool(
+		"get_public_key",
+		{
+			title: "Get Public Key",
+			description: "Get the compressed public key and public key hash for a wallet",
+			inputSchema: z.object({
+				walletId: z.string().describe("The walletId"),
+			}),
+		},
+		async ({ walletId }) => {
+			const wallet = await walletFromId(walletId);
+			const publicKey = wallet.getPublicKey ? wallet.getPublicKey(true) : null;
+			const publicKeyHash = wallet.getPublicKeyHash ? wallet.getPublicKeyHash(true) : null;
+			return {
+				content: [{
+					type: "text",
+					text: JSON.stringify({
+						publicKey,
+						publicKeyHash,
+						cashaddr: wallet.cashaddr,
+						tokenaddr: wallet.tokenaddr
+					}, null, 2)
+				}],
+			}
+		}
+	)
+
+	server.registerTool(
+		"get_deposit_address",
+		{
+			title: "Get Deposit Address",
+			description: "Get the deposit address for a wallet (both regular and token addresses)",
+			inputSchema: z.object({
+				walletId: z.string().describe("The walletId"),
+			}),
+		},
+		async ({ walletId }) => {
+			const wallet = await walletFromId(walletId);
+			return {
+				content: [{
+					type: "text",
+					text: JSON.stringify({
+						cashaddr: wallet.cashaddr,
+						tokenaddr: wallet.tokenaddr,
+						network: wallet.network
+					}, null, 2)
+				}],
+			}
+		}
+	)
+
+	// --- Escrow Advanced ---
+
+	server.registerTool(
+		"escrow_get_balance",
+		{
+			title: "Get Escrow Balance",
+			description: "Get the balance of an escrow contract",
+			inputSchema: z.object({
+				contractId: z.string().describe("The escrow contract ID"),
+			}),
+		},
+		async ({ contractId }) => {
+			const escrow = EscrowContract.fromId(contractId);
+			const balance = await escrow.getBalance();
+			return {
+				content: [{
+					type: "text",
+					text: JSON.stringify({
+						balance: balance,
+						address: escrow.getDepositAddress()
+					}, null, 2)
+				}],
+			}
+		}
+	)
+
+	server.registerTool(
+		"escrow_spend",
+		{
+			title: "Escrow Spend",
+			description: "Release escrow funds to the seller (buyer or arbiter can call)",
+			inputSchema: z.object({
+				contractId: z.string().describe("The escrow contract ID"),
+				wif: z.string().describe("Private key (WIF) of buyer or arbiter"),
+			}),
+		},
+		async ({ contractId, wif }) => {
+			const escrow = EscrowContract.fromId(contractId);
+			const result = await escrow.call(wif, "spend");
+			return {
+				content: [{ type: "text", text: JSON.stringify(serialize(result), null, 2) }],
+			}
+		}
+	)
+
+	server.registerTool(
+		"escrow_refund",
+		{
+			title: "Escrow Refund",
+			description: "Refund escrow funds to the buyer (seller or arbiter can call)",
+			inputSchema: z.object({
+				contractId: z.string().describe("The escrow contract ID"),
+				wif: z.string().describe("Private key (WIF) of seller or arbiter"),
+			}),
+		},
+		async ({ contractId, wif }) => {
+			const escrow = EscrowContract.fromId(contractId);
+			const result = await escrow.call(wif, "refund");
+			return {
+				content: [{ type: "text", text: JSON.stringify(serialize(result), null, 2) }],
+			}
+		}
+	)
+
+	// --- Token Watching ---
+
+	server.registerTool(
+		"get_token_deposit_address",
+		{
+			title: "Get Token Deposit Address",
+			description: "Get the token-aware deposit address for receiving CashTokens",
+			inputSchema: z.object({
+				walletId: z.string().describe("The walletId"),
+			}),
+		},
+		async ({ walletId }) => {
+			const wallet = await walletFromId(walletId);
+			return {
+				content: [{
+					type: "text",
+					text: JSON.stringify({
+						tokenaddr: wallet.tokenaddr,
+						cashaddr: wallet.cashaddr,
+						note: "Use tokenaddr for receiving CashTokens"
+					}, null, 2)
+				}],
+			}
+		}
+	)
+
+	// --- Testnet Utilities ---
+
+	server.registerTool(
+		"return_testnet_satoshis",
+		{
+			title: "Return Testnet Satoshis",
+			description: "Return testnet satoshis back to the faucet",
+			inputSchema: z.object({
+				walletId: z.string().describe("The testnet walletId"),
+			}),
+		},
+		async ({ walletId }) => {
+			const wallet = await walletFromId(walletId);
+			if (wallet.network !== "testnet") {
+				return {
+					content: [{ type: "text", text: "This function only works on testnet" }]
+				};
+			}
+			// Send to the testnet faucet return address
+			const result = await (wallet as any).returnTestnetSatoshis();
+			return {
+				content: [{ type: "text", text: JSON.stringify(serialize(result), null, 2) }],
+			}
+		}
+	)
+
+	// --- Address Validation ---
+
+	server.registerTool(
+		"validate_address",
+		{
+			title: "Validate Address",
+			description: "Validate a Bitcoin Cash address and get its details",
+			inputSchema: z.object({
+				address: z.string().describe("The address to validate"),
+			}),
+		},
+		async ({ address }) => {
+			try {
+				// Try to create a watch-only wallet to validate
+				const wallet = await TestNetWallet.watchOnly(address);
+				return {
+					content: [{
+						type: "text",
+						text: JSON.stringify({
+							valid: true,
+							cashaddr: wallet.cashaddr,
+							tokenaddr: wallet.tokenaddr,
+							network: wallet.network
+						}, null, 2)
+					}],
+				}
+			} catch (error) {
+				return {
+					content: [{
+						type: "text",
+						text: JSON.stringify({
+							valid: false,
+							error: (error as Error).message
+						}, null, 2)
+					}],
+				}
+			}
+		}
+	)
+
 	return server.server
 }
+
