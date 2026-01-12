@@ -2,38 +2,12 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import createServer, { configSchema } from "./index.js";
 import http from "http";
 
-// Parse config from query parameters
-function parseConfig(url: URL): any {
-    const config: any = {};
-    for (const [key, value] of url.searchParams) {
-        // Handle dot-notation for nested config
-        const keys = key.split('.');
-        let current = config;
-        for (let i = 0; i < keys.length - 1; i++) {
-            if (!current[keys[i]]) current[keys[i]] = {};
-            current = current[keys[i]];
-        }
-        // Try to parse as JSON, otherwise use as string
-        try {
-            current[keys[keys.length - 1]] = JSON.parse(value);
-        } catch {
-            current[keys[keys.length - 1]] = value;
-        }
-    }
-    return config;
-}
-
 const config = configSchema.parse({
     debug: process.env.DEBUG === "true",
 });
 
-const mcpServer = createServer({ config });
-
-const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: () => crypto.randomUUID(),
-});
-
-await mcpServer.connect(transport);
+// Store active sessions
+const sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: ReturnType<typeof createServer> }>();
 
 // MCP Server Card (metadata for discovery)
 const mcpCard = {
@@ -45,7 +19,7 @@ const mcpCard = {
     repository: "https://github.com/nickthelegend/bch-mcp",
     capabilities: {
         tools: true,
-        resources: false,
+        resources: true,
         prompts: false
     }
 };
@@ -86,18 +60,105 @@ const httpServer = http.createServer(async (req, res) => {
     }
 
     // MCP endpoint - main endpoint
-    if (pathname === "/mcp" || pathname.endsWith("/mcp")) {
-        if (req.method === "POST") {
-            console.log("Handling MCP POST request on /mcp");
-            await transport.handleRequest(req, res);
+    if ((pathname === "/mcp" || pathname.endsWith("/mcp")) && req.method === "POST") {
+        console.log("Handling MCP POST request on /mcp");
+
+        // Get session ID from header
+        const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+        // Read body to check request type
+        let body = "";
+        req.on("data", (chunk) => { body += chunk; });
+
+        await new Promise<void>((resolve) => req.on("end", resolve));
+
+        let jsonBody: any;
+        try {
+            jsonBody = JSON.parse(body);
+        } catch {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error" }, id: null }));
             return;
         }
+
+        console.log("Request method:", jsonBody.method, "Session:", sessionId);
+
+        // For initialize request, create new session
+        if (jsonBody.method === "initialize") {
+            const newSessionId = crypto.randomUUID();
+            console.log("Creating new session:", newSessionId);
+
+            const mcpServer = createServer({ config });
+            const transport = new StreamableHTTPServerTransport({
+                sessionIdGenerator: () => newSessionId,
+            });
+
+            await mcpServer.connect(transport);
+            sessions.set(newSessionId, { transport, server: mcpServer });
+
+            // Create a fake request with the body we already read
+            const fakeReq = Object.assign(
+                new (require("stream").Readable)({
+                    read() {
+                        this.push(body);
+                        this.push(null);
+                    }
+                }),
+                {
+                    method: req.method,
+                    url: req.url,
+                    headers: { ...req.headers, "mcp-session-id": newSessionId }
+                }
+            );
+
+            await transport.handleRequest(fakeReq as any, res);
+            return;
+        }
+
+        // For other requests, find existing session
+        if (sessionId && sessions.has(sessionId)) {
+            const session = sessions.get(sessionId)!;
+
+            // Create a fake request with the body we already read
+            const fakeReq = Object.assign(
+                new (require("stream").Readable)({
+                    read() {
+                        this.push(body);
+                        this.push(null);
+                    }
+                }),
+                {
+                    method: req.method,
+                    url: req.url,
+                    headers: req.headers
+                }
+            );
+
+            await session.transport.handleRequest(fakeReq as any, res);
+            return;
+        }
+
+        // No valid session
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            error: { code: -32600, message: "Invalid Request: Session not found. Send initialize request first." },
+            id: jsonBody.id || null
+        }));
+        return;
     }
 
-    // Also handle POST on root for compatibility
-    if (req.method === "POST" && pathname === "/") {
-        console.log("Handling MCP POST request on /");
-        await transport.handleRequest(req, res);
+    // Handle DELETE for session cleanup
+    if (pathname === "/mcp" && req.method === "DELETE") {
+        const sessionId = req.headers["mcp-session-id"] as string | undefined;
+        if (sessionId && sessions.has(sessionId)) {
+            const session = sessions.get(sessionId)!;
+            await session.server.close();
+            sessions.delete(sessionId);
+            console.log("Session closed:", sessionId);
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "ok" }));
         return;
     }
 
@@ -120,7 +181,11 @@ const httpServer = http.createServer(async (req, res) => {
     // Health check
     if (req.method === "GET" && (pathname === "/health" || pathname.endsWith("/health"))) {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok", timestamp: new Date().toISOString() }));
+        res.end(JSON.stringify({
+            status: "ok",
+            timestamp: new Date().toISOString(),
+            activeSessions: sessions.size
+        }));
         return;
     }
 
@@ -136,7 +201,8 @@ const httpServer = http.createServer(async (req, res) => {
                 card: "/.well-known/mcp.json",
                 config: "/.well-known/mcp-config"
             },
-            documentation: "https://github.com/nickthelegend/bch-mcp"
+            documentation: "https://github.com/nickthelegend/bch-mcp",
+            activeSessions: sessions.size
         }, null, 2));
         return;
     }
@@ -146,17 +212,31 @@ const httpServer = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ error: "Not found", path: pathname }));
 });
 
+// Clean up old sessions periodically (every 10 minutes)
+setInterval(() => {
+    console.log(`Active sessions: ${sessions.size}`);
+    // Could add session timeout logic here
+}, 10 * 60 * 1000);
+
 // Graceful shutdown
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
     console.log('SIGTERM signal received: closing HTTP server');
+    for (const [id, session] of sessions) {
+        await session.server.close();
+        sessions.delete(id);
+    }
     httpServer.close(() => {
         console.log('HTTP server closed');
         process.exit(0);
     });
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
     console.log('SIGINT signal received: closing HTTP server');
+    for (const [id, session] of sessions) {
+        await session.server.close();
+        sessions.delete(id);
+    }
     httpServer.close(() => {
         console.log('HTTP server closed');
         process.exit(0);
@@ -169,4 +249,3 @@ httpServer.listen(port, "0.0.0.0", () => {
     console.log(`MCP endpoint: http://0.0.0.0:${port}/mcp`);
     console.log(`Health check: http://0.0.0.0:${port}/health`);
 });
-
