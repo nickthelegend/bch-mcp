@@ -6,20 +6,21 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies
+# Install all dependencies (including dev)
 RUN npm ci
 
-# Copy source
+# Copy source and build
 COPY src ./src
 COPY tsconfig.json ./
-
-# Build the server with ESM format (external packages handled via node_modules)
 RUN npx esbuild src/server.ts --bundle --platform=node --format=esm --outfile=dist/index.js --packages=external
+
+# Remove devDependencies to minimize node_modules for production
+RUN npm prune --omit=dev && npm cache clean --force
 
 # Production stage
 FROM node:20-slim AS production
 
-# Install dumb-init for proper signal handling
+# Install dumb-init for proper signal handling and curl for health checks
 RUN apt-get update && apt-get install -y --no-install-recommends dumb-init curl && \
     rm -rf /var/lib/apt/lists/*
 
@@ -29,12 +30,11 @@ RUN groupadd --gid 1001 nodejs && \
 
 WORKDIR /app
 
-# Copy only the built files
+# Copy the built index.js and PRE-PRUNED node_modules
+# This avoids running 'npm ci' a second time in the slower production stage
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
+COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nodejs:nodejs /app/package*.json ./
-
-# Install only production dependencies
-RUN npm ci --omit=dev && npm cache clean --force
 
 # Switch to non-root user
 USER nodejs
