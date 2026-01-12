@@ -124,20 +124,49 @@ A comprehensive Bitcoin Cash (BCH) MCP server powered by mainnet-js. Provides wa
 
 ---
 
-## 📚 MCP Resources
+## 📚 MCP Resources (21 Documentation Guides)
 
 Agents can fetch documentation resources for context:
 
+### Core Guides
 | Resource URI | Description |
 |--------------|-------------|
-| `docs://overview` | BCH MCP Server overview |
-| `docs://wallets` | Wallet management guide |
-| `docs://transactions` | Transaction guide |
-| `docs://cashtokens` | CashTokens (fungible & NFT) guide |
-| `docs://escrow` | Escrow contracts guide |
-| `docs://utilities` | Utilities guide |
+| `docs://overview` | BCH MCP Server overview and quick start |
+| `docs://wallets` | Wallet management - create, restore, watch-only |
+| `docs://transactions` | Sending BCH - standard, max, OP_RETURN |
+| `docs://cashtokens` | CashTokens - genesis, mint, send, burn |
+| `docs://escrow` | Escrow contracts for secure transactions |
+| `docs://utilities` | QR codes, price conversion, signing |
+
+### Reference Guides
+| Resource URI | Description |
+|--------------|-------------|
+| `docs://bch-basics` | Bitcoin Cash fundamentals - units, confirmations |
+| `docs://addresses` | Address formats - CashAddr, token addresses |
+| `docs://smart-contracts` | CashScript - escrow, multisig, covenants |
+| `docs://bcmr` | BCMR - token metadata registries |
+| `docs://network` | Network info - mainnet, testnet, nodes |
+
+### Developer Resources
+| Resource URI | Description |
+|--------------|-------------|
+| `docs://api-reference` | Complete API reference for all tools |
+| `docs://examples` | Code examples for common operations |
+| `docs://faq` | Frequently asked questions |
+| `docs://developer-resources` | Tools, APIs, explorers, community |
+| `docs://security` | Security best practices |
+
+### CashScript Documentation
+| Resource URI | Description |
+|--------------|-------------|
+| `docs://cashscript` | What is CashScript - smart contract language |
+| `docs://cashscript-language` | Language reference - types, operators, statements |
+| `docs://cashscript-globals` | Global variables - tx introspection, time locks |
+| `docs://cashscript-covenants` | Covenants guide - restrict spending, state |
+| `docs://cashscript-sdk` | TypeScript SDK - Contract, TransactionBuilder |
 
 ---
+
 
 ## 🚀 Quick Start
 
