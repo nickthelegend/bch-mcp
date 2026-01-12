@@ -1,10 +1,3 @@
-var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
-  get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
-}) : x)(function(x) {
-  if (typeof require !== "undefined") return require.apply(this, arguments);
-  throw Error('Dynamic require of "' + x + '" is not supported');
-});
-
 // src/server.ts
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
@@ -2532,7 +2525,7 @@ import http from "http";
 var config = configSchema.parse({
   debug: process.env.DEBUG === "true"
 });
-var sessions = /* @__PURE__ */ new Map();
+var mcpServer = createServer({ config });
 var mcpCard = {
   name: "bch-mcp",
   description: "A comprehensive Bitcoin Cash (BCH) MCP server powered by mainnet-js. Provides wallet management, balance checking, sending BCH, CashTokens (genesis, minting, burning, sending), escrow contracts, QR codes, and transaction utilities.",
@@ -2546,23 +2539,13 @@ var mcpCard = {
     prompts: false
   }
 };
-var mcpConfigSchema = {
-  title: "MCP Session Configuration",
-  description: "Schema for the /mcp endpoint configuration",
-  "x-query-style": "dot+bracket",
-  type: "object",
-  properties: {
-    debug: {
-      type: "boolean",
-      default: false,
-      description: "Enable debug logging"
-    }
-  }
-};
+var transport = new StreamableHTTPServerTransport({
+  sessionIdGenerator: () => crypto.randomUUID()
+});
+await mcpServer.connect(transport);
 var httpServer = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
   const pathname = url.pathname;
-  console.log(`${req.method} ${pathname}`);
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE");
@@ -2573,105 +2556,28 @@ var httpServer = http.createServer(async (req, res) => {
     res.end();
     return;
   }
-  if ((pathname === "/mcp" || pathname.endsWith("/mcp")) && req.method === "POST") {
-    console.log("Handling MCP POST request on /mcp");
-    const sessionId = req.headers["mcp-session-id"];
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk;
-    });
-    await new Promise((resolve) => req.on("end", resolve));
-    let jsonBody;
-    try {
-      jsonBody = JSON.parse(body);
-    } catch {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error" }, id: null }));
+  if (pathname === "/mcp" || pathname === "/") {
+    if (req.method === "POST") {
+      console.log(`POST ${pathname} - Session: ${req.headers["mcp-session-id"] || "new"}`);
+      await transport.handleRequest(req, res);
       return;
     }
-    console.log("Request method:", jsonBody.method, "Session:", sessionId);
-    if (jsonBody.method === "initialize") {
-      const newSessionId = crypto.randomUUID();
-      console.log("Creating new session:", newSessionId);
-      const mcpServer = createServer({ config });
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => newSessionId
-      });
-      await mcpServer.connect(transport);
-      sessions.set(newSessionId, { transport, server: mcpServer });
-      const fakeReq = Object.assign(
-        new (__require("stream")).Readable({
-          read() {
-            this.push(body);
-            this.push(null);
-          }
-        }),
-        {
-          method: req.method,
-          url: req.url,
-          headers: { ...req.headers, "mcp-session-id": newSessionId }
-        }
-      );
-      await transport.handleRequest(fakeReq, res);
+    if (req.method === "DELETE") {
+      await transport.handleRequest(req, res);
       return;
     }
-    if (sessionId && sessions.has(sessionId)) {
-      const session = sessions.get(sessionId);
-      const fakeReq = Object.assign(
-        new (__require("stream")).Readable({
-          read() {
-            this.push(body);
-            this.push(null);
-          }
-        }),
-        {
-          method: req.method,
-          url: req.url,
-          headers: req.headers
-        }
-      );
-      await session.transport.handleRequest(fakeReq, res);
-      return;
-    }
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      jsonrpc: "2.0",
-      error: { code: -32600, message: "Invalid Request: Session not found. Send initialize request first." },
-      id: jsonBody.id || null
-    }));
-    return;
-  }
-  if (pathname === "/mcp" && req.method === "DELETE") {
-    const sessionId = req.headers["mcp-session-id"];
-    if (sessionId && sessions.has(sessionId)) {
-      const session = sessions.get(sessionId);
-      await session.server.close();
-      sessions.delete(sessionId);
-      console.log("Session closed:", sessionId);
-    }
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok" }));
-    return;
-  }
-  if (req.method === "GET" && pathname.includes(".well-known/mcp.json")) {
-    console.log("Serving MCP Server Card");
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(mcpCard, null, 2));
-    return;
-  }
-  if (req.method === "GET" && pathname.includes(".well-known/mcp-config")) {
-    console.log("Serving MCP Config Schema");
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(mcpConfigSchema, null, 2));
-    return;
   }
   if (req.method === "GET" && (pathname === "/health" || pathname.endsWith("/health"))) {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
       status: "ok",
-      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-      activeSessions: sessions.size
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
     }));
+    return;
+  }
+  if (req.method === "GET" && pathname.includes(".well-known/mcp.json")) {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(mcpCard, null, 2));
     return;
   }
   if (req.method === "GET" && pathname === "/") {
@@ -2682,46 +2588,15 @@ var httpServer = http.createServer(async (req, res) => {
       endpoints: {
         mcp: "/mcp",
         health: "/health",
-        card: "/.well-known/mcp.json",
-        config: "/.well-known/mcp-config"
-      },
-      documentation: "https://github.com/nickthelegend/bch-mcp",
-      activeSessions: sessions.size
+        card: "/.well-known/mcp.json"
+      }
     }, null, 2));
     return;
   }
-  console.log("404 - Not found:", pathname);
   res.writeHead(404, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: "Not found", path: pathname }));
-});
-setInterval(() => {
-  console.log(`Active sessions: ${sessions.size}`);
-}, 10 * 60 * 1e3);
-process.on("SIGTERM", async () => {
-  console.log("SIGTERM signal received: closing HTTP server");
-  for (const [id, session] of sessions) {
-    await session.server.close();
-    sessions.delete(id);
-  }
-  httpServer.close(() => {
-    console.log("HTTP server closed");
-    process.exit(0);
-  });
-});
-process.on("SIGINT", async () => {
-  console.log("SIGINT signal received: closing HTTP server");
-  for (const [id, session] of sessions) {
-    await session.server.close();
-    sessions.delete(id);
-  }
-  httpServer.close(() => {
-    console.log("HTTP server closed");
-    process.exit(0);
-  });
 });
 var port = parseInt(process.env.PORT || "8081");
 httpServer.listen(port, "0.0.0.0", () => {
   console.log(`BCH MCP Server listening on http://0.0.0.0:${port}`);
-  console.log(`MCP endpoint: http://0.0.0.0:${port}/mcp`);
-  console.log(`Health check: http://0.0.0.0:${port}/health`);
 });
