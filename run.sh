@@ -59,15 +59,21 @@ check_dependencies() {
         log_success "Docker is installed"
     fi
 
-    # Check if Docker Compose is installed
-    if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
-        log_error "Docker Compose is not installed. Installing..."
-        sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-        sudo chmod +x /usr/local/bin/docker-compose
-        log_success "Docker Compose installed successfully"
+    # Check if Docker Compose is available (modern docker compose or legacy docker-compose)
+    if docker compose version &> /dev/null; then
+        DOCKER_COMPOSE="docker compose"
+        log_success "Docker Compose (modern) is available"
+    elif command -v docker-compose &> /dev/null; then
+        DOCKER_COMPOSE="docker-compose"
+        log_success "Docker Compose (legacy) is available"
     else
-        log_success "Docker Compose is installed"
+        log_error "Docker Compose is not installed. Installing docker-compose-plugin..."
+        sudo apt-get update
+        sudo apt-get install -y docker-compose-plugin
+        DOCKER_COMPOSE="docker compose"
+        log_success "Docker Compose plugin installed successfully"
     fi
+    export DOCKER_COMPOSE
 }
 
 # ============================================
@@ -375,14 +381,17 @@ NGINX_TEMP_EOF
 build_and_start() {
     log_info "Building and starting the application..."
     
+    # Use the detected docker compose command
+    DC="${DOCKER_COMPOSE:-docker compose}"
+    
     if [ -n "$DOMAIN" ]; then
         # With nginx proxy
-        docker-compose --profile with-nginx build
-        docker-compose --profile with-nginx up -d
+        $DC --profile with-nginx build
+        $DC --profile with-nginx up -d
     else
         # Direct mode (no nginx)
-        docker-compose build
-        docker-compose up -d
+        $DC build
+        $DC up -d
     fi
     
     log_success "Application started"
@@ -401,12 +410,14 @@ check_health() {
         health_url="http://localhost/health"
     fi
     
+    DC="${DOCKER_COMPOSE:-docker compose}"
+    
     if curl -sf "$health_url" > /dev/null; then
         log_success "Application is healthy!"
     else
         log_error "Application health check failed"
         log_info "Checking logs..."
-        docker-compose logs --tail=50 bch-mcp
+        $DC logs --tail=50 bch-mcp
         exit 1
     fi
 }
@@ -478,14 +489,17 @@ show_menu() {
             deploy_with_ssl
             ;;
         3)
-            docker-compose down
+            DC="${DOCKER_COMPOSE:-docker compose}"
+            $DC down
             log_success "Server stopped"
             ;;
         4)
-            docker-compose logs -f bch-mcp
+            DC="${DOCKER_COMPOSE:-docker compose}"
+            $DC logs -f bch-mcp
             ;;
         5)
-            docker-compose up -d --build
+            DC="${DOCKER_COMPOSE:-docker compose}"
+            $DC up -d --build
             log_success "Server rebuilt and restarted"
             ;;
         6)
