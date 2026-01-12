@@ -283,6 +283,10 @@ setup_ssl() {
     
     log_info "Setting up SSL certificate for $DOMAIN..."
     
+    # Create directories with proper permissions
+    mkdir -p certbot/conf certbot/www/.well-known/acme-challenge
+    chmod -R 755 certbot/www
+    
     # Create temporary nginx config for initial certificate
     cat > nginx-temp.conf << NGINX_TEMP_EOF
 events {
@@ -297,6 +301,7 @@ http {
 
         location /.well-known/acme-challenge/ {
             root /var/www/certbot;
+            try_files \$uri =404;
         }
 
         location / {
@@ -307,16 +312,33 @@ http {
 }
 NGINX_TEMP_EOF
 
-    # Start temporary nginx
+    # Stop any existing nginx-temp container
+    docker stop nginx-temp 2>/dev/null || true
+    docker rm nginx-temp 2>/dev/null || true
+
+    # Start temporary nginx - NOTE: certbot/www is NOT read-only so certbot can write
     docker run -d --name nginx-temp \
         -p 80:80 \
         -v $(pwd)/nginx-temp.conf:/etc/nginx/nginx.conf:ro \
-        -v $(pwd)/certbot/www:/var/www/certbot:ro \
+        -v $(pwd)/certbot/www:/var/www/certbot \
         nginx:alpine
     
+    # Wait for nginx to start
+    log_info "Waiting for nginx to start..."
     sleep 5
     
+    # Verify nginx is serving correctly
+    log_info "Testing ACME challenge path..."
+    echo "test" > certbot/www/.well-known/acme-challenge/test.txt
+    if curl -sf "http://localhost/.well-known/acme-challenge/test.txt" > /dev/null 2>&1; then
+        log_success "ACME challenge path is accessible"
+        rm certbot/www/.well-known/acme-challenge/test.txt
+    else
+        log_warning "Could not verify ACME challenge path locally, proceeding anyway..."
+    fi
+    
     # Get certificate
+    log_info "Requesting certificate from Let's Encrypt..."
     docker run --rm \
         -v $(pwd)/certbot/conf:/etc/letsencrypt \
         -v $(pwd)/certbot/www:/var/www/certbot \
@@ -326,13 +348,25 @@ NGINX_TEMP_EOF
         --email $EMAIL \
         --agree-tos \
         --no-eff-email \
-        --force-renewal
+        --non-interactive
+    
+    # Check if certificate was obtained
+    if [ -f "certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
+        log_success "SSL certificate obtained successfully!"
+    else
+        log_error "Failed to obtain SSL certificate"
+        log_info "Check that your domain $DOMAIN points to this server's IP address"
+        docker logs nginx-temp
+        docker stop nginx-temp && docker rm nginx-temp
+        rm nginx-temp.conf
+        exit 1
+    fi
     
     # Stop temporary nginx
     docker stop nginx-temp && docker rm nginx-temp
     rm nginx-temp.conf
     
-    log_success "SSL certificate obtained"
+    log_success "SSL certificate setup complete"
 }
 
 # ============================================
