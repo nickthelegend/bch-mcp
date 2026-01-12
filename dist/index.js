@@ -2525,24 +2525,7 @@ import http from "http";
 var config = configSchema.parse({
   debug: process.env.DEBUG === "true"
 });
-var mcpServer = createServer({ config });
-var mcpCard = {
-  name: "bch-mcp",
-  description: "A comprehensive Bitcoin Cash (BCH) MCP server powered by mainnet-js. Provides wallet management, balance checking, sending BCH, CashTokens (genesis, minting, burning, sending), escrow contracts, QR codes, and transaction utilities.",
-  version: "1.0.0",
-  endpoint: "/mcp",
-  author: "nickthelegend",
-  repository: "https://github.com/nickthelegend/bch-mcp",
-  capabilities: {
-    tools: true,
-    resources: true,
-    prompts: false
-  }
-};
-var transport = new StreamableHTTPServerTransport({
-  sessionIdGenerator: () => crypto.randomUUID()
-});
-await mcpServer.connect(transport);
+var sessions = /* @__PURE__ */ new Map();
 var httpServer = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
   const pathname = url.pathname;
@@ -2558,45 +2541,85 @@ var httpServer = http.createServer(async (req, res) => {
   }
   if (pathname === "/mcp" || pathname === "/") {
     if (req.method === "POST") {
-      console.log(`POST ${pathname} - Session: ${req.headers["mcp-session-id"] || "new"}`);
+      const sessionId = req.headers["mcp-session-id"];
+      if (sessionId) {
+        if (sessions.has(sessionId)) {
+          const session = sessions.get(sessionId);
+          session.lastAccess = Date.now();
+          await session.transport.handleRequest(req, res);
+          return;
+        } else {
+          res.writeHead(410, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            error: { code: -32e3, message: "Session expired or not found. Please re-initialize." },
+            id: null
+          }));
+          return;
+        }
+      }
+      const newId = crypto.randomUUID();
+      console.log(`[HTTP] Starting new isolated session: ${newId}`);
+      const server = createServer({ config });
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => newId
+      });
+      await server.connect(transport);
+      const sessionObj = { transport, server, lastAccess: Date.now() };
+      sessions.set(newId, sessionObj);
       await transport.handleRequest(req, res);
       return;
     }
     if (req.method === "DELETE") {
-      await transport.handleRequest(req, res);
+      const sessionId = req.headers["mcp-session-id"];
+      if (sessionId && sessions.has(sessionId)) {
+        console.log(`[HTTP] Explicitly closing session: ${sessionId}`);
+        const { server } = sessions.get(sessionId);
+        await server.close();
+        sessions.delete(sessionId);
+      }
+      res.writeHead(200);
+      res.end(JSON.stringify({ status: "ok" }));
       return;
     }
   }
-  if (req.method === "GET" && (pathname === "/health" || pathname.endsWith("/health"))) {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      status: "ok",
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    }));
-    return;
+  if (req.method === "GET") {
+    if (pathname === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        status: "ok",
+        activeSessions: sessions.size,
+        transport: "http-isolated"
+      }));
+      return;
+    }
+    if (pathname === "/") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        name: "BCH MCP Server",
+        version: "1.0.0",
+        activeSessions: sessions.size,
+        endpoint: "/mcp",
+        transport: "HTTP (Isolated Sessions)"
+      }, null, 2));
+      return;
+    }
   }
-  if (req.method === "GET" && pathname.includes(".well-known/mcp.json")) {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(mcpCard, null, 2));
-    return;
-  }
-  if (req.method === "GET" && pathname === "/") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      name: "BCH MCP Server",
-      version: "1.0.0",
-      endpoints: {
-        mcp: "/mcp",
-        health: "/health",
-        card: "/.well-known/mcp.json"
-      }
-    }, null, 2));
-    return;
-  }
-  res.writeHead(404, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ error: "Not found", path: pathname }));
+  res.writeHead(404);
+  res.end();
 });
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, session] of sessions) {
+    if (now - session.lastAccess > 30 * 60 * 1e3) {
+      console.log(`[Timer] Cleaning up idle session: ${id}`);
+      session.server.close().catch(() => {
+      });
+      sessions.delete(id);
+    }
+  }
+}, 5 * 60 * 1e3);
 var port = parseInt(process.env.PORT || "8081");
 httpServer.listen(port, "0.0.0.0", () => {
-  console.log(`BCH MCP Server listening on http://0.0.0.0:${port}`);
+  console.log(`BCH MCP Server listening on port ${port}`);
 });

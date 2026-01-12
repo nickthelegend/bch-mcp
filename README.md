@@ -14,6 +14,7 @@ A comprehensive Bitcoin Cash (BCH) MCP server powered by mainnet-js. Provides wa
 | **MCP Card** | `https://mcp.cashlabs.dev/.well-known/mcp.json` |
 
 ### MCP Client Configuration
+Standard HTTP MCP configuration. Our server supports **Isolated Sessions**, meaning every new connection automatically gets a fresh server state, preventing session conflicts:
 
 ```json
 {
