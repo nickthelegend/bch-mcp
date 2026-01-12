@@ -14,6 +14,8 @@ import {
 } from "mainnet-js"
 import { EscrowContract } from "@mainnet-cash/contract"
 import QRCode from "qrcode-svg"
+import fs from "fs"
+import path from "path"
 
 // Helper to serialize BigInt to string for JSON output
 function serialize(obj: any): any {
@@ -1499,6 +1501,55 @@ export default function createServer({
 			contents: [{ uri: "docs://cashscript-sdk", text: DOCS.cashscriptSdk, mimeType: "text/markdown" }]
 		})
 	)
+
+	// --- Dynamic Documentation Resources (from files) ---
+
+	const walkDir = (dir: string, filelist: string[] = []): string[] => {
+		if (!fs.existsSync(dir)) return filelist;
+		const files = fs.readdirSync(dir);
+		files.forEach((file) => {
+			const filePath = path.join(dir, file);
+			if (fs.statSync(filePath).isDirectory()) {
+				filelist = walkDir(filePath, filelist);
+			} else if (file.endsWith(".md")) {
+				filelist.push(filePath);
+			}
+		});
+		return filelist;
+	};
+
+	const registerDocsFromFolder = (folderPath: string, uriScheme: string, namePrefix: string) => {
+		const fullPath = path.resolve(process.cwd(), folderPath);
+		if (config.debug) console.log(`Registering docs from: ${fullPath}`);
+		if (!fs.existsSync(fullPath)) {
+			if (config.debug) console.log(`Directory ${fullPath} not found.`);
+			return;
+		}
+
+		const files = walkDir(fullPath);
+		files.forEach((file) => {
+			const relativePath = path.relative(fullPath, file);
+			const resourceUri = `${uriScheme}://${relativePath.replace(/\\/g, "/")}`;
+			// Sanitize name for MCP (alphanumeric, hyphens, underscores)
+			const resourceName = `${namePrefix}-${relativePath.replace(/\\/g, "-").replace(/\.md$/, "").replace(/[^a-zA-Z0-9_-]/g, "").toLowerCase()}`;
+
+			server.resource(
+				resourceName,
+				resourceUri,
+				{ description: `BCH Documentation: ${relativePath}`, mimeType: "text/markdown" },
+				async () => ({
+					contents: [{
+						uri: resourceUri,
+						text: fs.readFileSync(file, "utf8"),
+						mimeType: "text/markdown"
+					}]
+				})
+			);
+		});
+	};
+
+	registerDocsFromFolder("docs-mainnet", "mainnet", "mainnet-doc");
+	registerDocsFromFolder("docs-cashscript", "cs", "cashscript-doc");
 
 	// --- Wallet Management ---
 

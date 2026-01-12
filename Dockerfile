@@ -36,6 +36,10 @@ COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nodejs:nodejs /app/package*.json ./
 
+# Copy documentation directories
+COPY --chown=nodejs:nodejs docs-mainnet ./docs-mainnet
+COPY --chown=nodejs:nodejs docs-cashscript ./docs-cashscript
+
 # Switch to non-root user
 USER nodejs
 

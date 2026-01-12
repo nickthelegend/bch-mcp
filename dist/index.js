@@ -16,6 +16,8 @@ import {
 } from "mainnet-js";
 import { EscrowContract } from "@mainnet-cash/contract";
 import QRCode from "qrcode-svg";
+import fs from "fs";
+import path from "path";
 function serialize(obj) {
   if (obj === null || obj === void 0) return obj;
   return JSON.parse(JSON.stringify(
@@ -1447,6 +1449,47 @@ function createServer({
       contents: [{ uri: "docs://cashscript-sdk", text: DOCS.cashscriptSdk, mimeType: "text/markdown" }]
     })
   );
+  const walkDir = (dir, filelist = []) => {
+    if (!fs.existsSync(dir)) return filelist;
+    const files = fs.readdirSync(dir);
+    files.forEach((file) => {
+      const filePath = path.join(dir, file);
+      if (fs.statSync(filePath).isDirectory()) {
+        filelist = walkDir(filePath, filelist);
+      } else if (file.endsWith(".md")) {
+        filelist.push(filePath);
+      }
+    });
+    return filelist;
+  };
+  const registerDocsFromFolder = (folderPath, uriScheme, namePrefix) => {
+    const fullPath = path.resolve(process.cwd(), folderPath);
+    if (config2.debug) console.log(`Registering docs from: ${fullPath}`);
+    if (!fs.existsSync(fullPath)) {
+      if (config2.debug) console.log(`Directory ${fullPath} not found.`);
+      return;
+    }
+    const files = walkDir(fullPath);
+    files.forEach((file) => {
+      const relativePath = path.relative(fullPath, file);
+      const resourceUri = `${uriScheme}://${relativePath.replace(/\\/g, "/")}`;
+      const resourceName = `${namePrefix}-${relativePath.replace(/\\/g, "-").replace(/\.md$/, "").replace(/[^a-zA-Z0-9_-]/g, "").toLowerCase()}`;
+      server.resource(
+        resourceName,
+        resourceUri,
+        { description: `BCH Documentation: ${relativePath}`, mimeType: "text/markdown" },
+        async () => ({
+          contents: [{
+            uri: resourceUri,
+            text: fs.readFileSync(file, "utf8"),
+            mimeType: "text/markdown"
+          }]
+        })
+      );
+    });
+  };
+  registerDocsFromFolder("docs-mainnet", "mainnet", "mainnet-doc");
+  registerDocsFromFolder("docs-cashscript", "cs", "cashscript-doc");
   server.registerTool(
     "wallet_create",
     {
@@ -2586,14 +2629,10 @@ var httpServer = http.createServer(async (req, res) => {
   if (req.method === "GET") {
     if (pathname === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        status: "ok",
-        activeSessions: sessions.size,
-        transport: "http-isolated"
-      }));
+      res.end(JSON.stringify({ status: "ok", activeSessions: sessions.size }));
       return;
     }
-    if (pathname === "/") {
+    if (pathname === "/" || pathname === "/mcp") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
         name: "BCH MCP Server",

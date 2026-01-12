@@ -166,6 +166,17 @@ Agents can fetch documentation resources for context:
 | `docs://cashscript-covenants` | Covenants guide - restrict spending, state |
 | `docs://cashscript-sdk` | TypeScript SDK - Contract, TransactionBuilder |
 
+### 📚 Comprehensive Project Documentation
+
+The server automatically scans and exposes all documentation files from the project. You can access them using the following URI schemes:
+
+- **Mainnet-JS Docs**: `mainnet://{path/to/file}`
+- **CashScript Docs**: `cs://{path/to/file}`
+
+Examples:
+- `mainnet://tutorial/rest`
+- `cs://guides/cashtokens`
+
 ---
 
 
