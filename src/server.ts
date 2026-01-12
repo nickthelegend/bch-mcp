@@ -90,14 +90,10 @@ const httpServer = http.createServer(async (req, res) => {
     if (req.method === "GET") {
         if (pathname === "/health") {
             res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({
-                status: "ok",
-                activeSessions: sessions.size,
-                transport: "http-isolated"
-            }));
+            res.end(JSON.stringify({ status: "ok", activeSessions: sessions.size }));
             return;
         }
-        if (pathname === "/") {
+        if (pathname === "/" || pathname === "/mcp") {
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({
                 name: "BCH MCP Server",
